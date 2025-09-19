@@ -1,118 +1,125 @@
 // --- 1. Import Library ที่จำเป็น ---
+const logger = require('./logger'); // <--- เพิ่มเข้ามาเป็นอันดับแรก
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const admin = require("firebase-admin");
 require('dotenv').config();
 
-// --- 2. ตั้งค่าเซิร์ฟเวอร์ ---
+// --- 2. ตั้งค่า Firebase Admin ---
+const serviceAccount = require("./firebase-key.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
+
+// --- 3. ตั้งค่าเซิร์ฟเวอร์ Express ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- 4. ตั้งค่า Gemini AI ---
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
-  console.error("ข้อผิดพลาด: ไม่ได้ตั้งค่า GEMINI_API_KEY ในไฟล์ .env");
+  // เปลี่ยนมาใช้ logger.error และออกจากโปรแกรม
+  logger.error("FATAL: GEMINI_API_KEY is not set in .env file");
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(apiKey);
 
-// --- 3. ฐานข้อมูลจำลอง ---
-const allProducts = [
-  // VVV แก้ไขชื่อไฟล์รูปภาพให้ถูกต้อง VVV
-  { "product_id": "P001", "type": "physical", "name": "Am Good Nano Oil", "description": "น้ำมันสมุนไพรนาโนซึมไว...", "price": 350.00, "image_url": "/images/nano-oil.jpg" },
-  { "product_id": "P002", "type": "physical", "name": "Am Good Coffee", "description": "กาแฟสุขภาพหอมเข้ม...", "price": 350.00, "image_url": "/images/coffee.jpg" },
-  { "product_id": "P003", "type": "physical", "name": "AM Knock (น้ำมัน CBD)", "description": "น้ำมัน CBD เกรดพรีเมียม...", "price": 1150.00, "image_url": "/images/amknock.jpg" },
-  { "product_id": "P004", "type": "physical", "name": "Am Fine", "description": "ผลิตภัณฑ์เสริมอาหารสูตรสมุนไพรระดับโลก...", "price": 900.00, "image_url": "/images/amfine.jpg" },
-  { "product_id": "S001", "type": "service", "name": "บริการอบสินแร่ภูเขาไฟญี่ปุ่น", "description": "การบำบัดร่างกายด้วยความร้อน...", "image_url": "/images/sandbath.jpg", "variants": [{ "variant_id": "S001-A", "name": "เดินทางมาเอง", "price": 990.00 }, { "variant_id": "S001-B", "name": "บริการรับ-ส่ง (เฉพาะกรุงเทพฯ)", "price": 1350.00 }] }
-  // ^^^ สิ้นสุดการแก้ไข ^^^
-];
+// สร้างตัวแปรว่างไว้สำหรับเก็บข้อมูลสินค้า
+let allProducts = [];
 
-// --- 4. สร้าง API Endpoints ---
-app.get('/api/products', (req, res) => {
-  res.json(allProducts);
-});
+// ฟังก์ชันสำหรับโหลดข้อมูลสินค้าจาก Firestore
+async function loadProductsFromFirestore() {
+    try {
+        // เปลี่ยนมาใช้ logger.info
+        logger.info("Attempting to load products from Firestore...");
+        const productsCollection = db.collection('products');
+        const snapshot = await productsCollection.get();
+        if (snapshot.empty) {
+            // เปลี่ยนมาใช้ logger.warn
+            logger.warn("No products found in the 'products' collection in Firestore.");
+            return;
+        }
+        // แปลงข้อมูลแล้วเก็บในตัวแปร allProducts
+        allProducts = snapshot.docs.map(doc => ({
+            product_id: doc.id,
+            ...doc.data()
+        }));
+        // เปลี่ยนมาใช้ logger.info พร้อมบอกจำนวนที่โหลดได้
+        logger.info(`Successfully loaded ${allProducts.length} products from Firestore.`);
+    } catch (error) {
+        // เปลี่ยนมาใช้ logger.error พร้อมเก็บข้อมูล error ทั้งหมด
+        logger.error("Failed to load products from Firestore", {
+          errorMessage: error.message,
+          stack: error.stack
+        });
+    }
+}
 
-app.get('/api/products/:id', (req, res) => {
-  const productId = req.params.id;
-  const product = allProducts.find(p => p.product_id === productId);
-  if (product) {
-    res.json(product);
-  } else {
-    res.status(404).json({ message: 'ไม่พบสินค้า' });
-  }
-});
 
+// --- 5. สร้าง API Endpoints ---
+
+// Endpoint เดิมสำหรับ AI Chat (แก้ไขเล็กน้อย)
 app.post('/api/consult', async (req, res) => {
-  const userQuestion = req.body.question;
+  const { question, element } = req.body;
 
-  if (!userQuestion || userQuestion.trim() === '') {
+  if (!question || question.trim() === '') {
     return res.status(400).json({ message: 'กรุณาส่งคำถาม' });
   }
-
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
     const productContext = JSON.stringify(allProducts, null, 2);
-    const prompt = `
-      คุณคือ "incave AI" ผู้เชี่ยวชาญด้านสุขภาพและการดูแลร่างกายที่เป็นมิตรและให้ความช่วยเหลือ
-      
-      **ข้อมูลผลิตภัณฑ์ที่มีอยู่:**
-      ${productContext}
-
-      **หน้าที่ของคุณ:**
-      1. ตอบคำถามของผู้ใช้เกี่ยวกับสุขภาพด้วยความห่วงใยและให้ข้อมูลที่เป็นประโยชน์
-      2. หากคำถามเกี่ยวข้องกับอาการหรือปัญหาสุขภาพที่สามารถบรรเทาได้ด้วยผลิตภัณฑ์ที่มีอยู่ ให้แนะนำผลิตภัณฑ์ที่เกี่ยวข้อง 1-2 อย่าง พร้อมอธิบายสั้นๆ ว่าเหตุใดจึงเหมาะสม
-      3. ห้ามให้คำวินิจฉัยทางการแพทย์เด็ดขาด
-      4. ปิดท้ายคำตอบเสมอด้วยการแนะนำให้ปรึกษาแพทย์หรือผู้เชี่ยวชาญเพื่อรับการวินิจฉัยที่ถูกต้อง
-
-      **คำถามจากผู้ใช้:**
-      "${userQuestion.trim()}"
-
-      โปรดให้คำแนะนำ:
-    `;
+    
+    let prompt = `คุณคือ "incave AI" ผู้เชี่ยวชาญสุขภาพองค์รวมที่เป็นมิตร ข้อมูลผลิตภัณฑ์ทั้งหมดที่มีคือ: ${productContext}.`;
+    if (element) {
+        prompt += ` ผู้ใช้คนนี้มีพื้นฐานเป็น "ธาตุ${element}" โปรดให้คำแนะนำที่สอดคล้องกับธาตุของเขาด้วย.`;
+    }
+    prompt += ` ตอบคำถามของผู้ใช้: "${question.trim()}" หากเกี่ยวข้องกับสินค้าให้แนะนำได้ แต่อย่าพยายามวินิจฉัยโรค และแนะนำให้ปรึกษาแพทย์ผู้เชี่ยวชาญเสมอเมื่อเป็นเรื่องที่เกี่ยวข้องกับอาการเจ็บป่วย`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const aiResponse = response.text();
-
-    res.json({ answer: aiResponse });
-
+    res.json({ answer: response.text() });
   } catch (error) {
-    console.error('เกิดข้อผิดพลาดในการเรียกใช้ Gemini API:', error.message || error);
-    res.status(500).json({ answer: 'ขออภัยค่ะ ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง' });
+    // เปลี่ยนมาใช้ logger.error
+    logger.error("Error processing /api/consult", {
+      errorMessage: error.message,
+      stack: error.stack,
+      requestBody: req.body // บันทึกข้อมูลที่ส่งมาด้วย (ยกเว้นข้อมูลส่วนตัว)
+    });
+    res.status(500).json({ answer: 'ขออภัยค่ะ ระบบไม่สามารถประมวลผลได้ในขณะนี้' });
   }
 });
 
-app.get('/api/summary', (req, res) => {
-  const healthSummary = {
-    user_name: "ออม",
-    element: "ธาตุดิน",
-    health_tips: "ผู้มีธาตุดินควรรักษาสมดุลร่างกายด้วยการรับประทานอาหารรสฝาดและรสขม เช่น มะระ, สะเดา, ฝรั่ง",
-    related_products: [
-        // VVV แก้ไขชื่อไฟล์รูปภาพให้ถูกต้อง VVV
-      { product_id: "P002", name: "Am Good Coffee", image_url: "/images/coffee.jpg" },
-      { product_id: "P004", name: "Am Fine", image_url: "/images/amfine.jpg" }
-      // ^^^ สิ้นสุดการแก้ไข ^^^
-    ]
-  };
-  res.json(healthSummary);
+// Endpoint เดิมสำหรับค้นหาธาตุ (ไม่มีการแก้ไข)
+app.post('/api/find-element', (req, res) => {
+    const { birthdate } = req.body;
+    if (!birthdate) {
+        return res.status(400).json({ message: 'กรุณาส่งวันเกิด' });
+    }
+    const month = new Date(birthdate).getMonth() + 1;
+    let element = '';
+    let description = '';
+    if ([12, 1, 2].includes(month)) { element = 'ธาตุน้ำ'; description = 'เจ้าแห่งการปรับตัว ไหลลื่นเหมือนสายน้ำ มีความคิดสร้างสรรค์'; }
+    else if ([3, 4, 5].includes(month)) { element = 'ธาตุลม'; description = 'นักสื่อสาร มีความคล่องแคล่วว่องไว ชอบการเปลี่ยนแปลง'; }
+    else if ([6, 7, 8].includes(month)) { element = 'ธาตุไฟ'; description = 'มีความเป็นผู้นำ มีพลังและความกระตือรือร้นสูง'; }
+    else { element = 'ธาตุดิน'; description = 'มีความมั่นคง หนักแน่น เหมือนดั่งปฐพี เป็นที่พึ่งพาได้'; }
+    res.json({ element: element, description: description });
 });
 
-// --- 5. Error Handlers (ควรอยู่ท้ายสุด ก่อน app.listen) ---
+// --- 6. Error Handlers ---
 app.use((req, res, next) => {
-  res.status(404).json({ message: "ไม่พบเส้นทางที่ร้องขอ" });
+  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
 });
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-});
-
-// --- 6. สั่งให้เซิร์ฟเวอร์เริ่มทำงาน ---
+// --- 7. สั่งให้เซิร์ฟเวอร์เริ่มทำงาน ---
 app.listen(PORT, () => {
-  console.log(`เซิร์ฟเวอร์กำลังทำงานที่ http://localhost:${PORT}`);
+  // เปลี่ยนมาใช้ logger.info
+  logger.info(`Server is starting up and listening on port ${PORT}`);
+  // เรียกใช้ฟังก์ชันโหลดข้อมูลตอนเซิร์ฟเวอร์เริ่มทำงาน
+  loadProductsFromFirestore();
 });
