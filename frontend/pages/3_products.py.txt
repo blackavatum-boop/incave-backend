@@ -1,0 +1,47 @@
+# C:\my-incave-project\frontend\pages\3_products.py
+import streamlit as st
+import json
+
+st.set_page_config(layout="wide")
+
+# ฟังก์ชันสำหรับโหลดข้อมูลจากไฟล์ JSON
+@st.cache_data
+def load_data(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data
+    except FileNotFoundError:
+        st.error(f"ไม่พบไฟล์ {filepath} กรุณาตรวจสอบว่าสร้างไฟล์ถูกต้องในโฟลเดอร์ frontend")
+        return []
+
+st.title("✨ สินค้าและบริการของเรา")
+st.write("เลือกชมผลิตภัณฑ์และบริการที่ออกแบบมาเพื่อสุขภาพที่ดีของคุณ")
+st.markdown("---")
+
+# โหลดข้อมูลจากไฟล์ products.json ที่อยู่ในโฟลเดอร์ frontend
+all_items = load_data('products.json')
+
+if not all_items:
+    st.warning("ยังไม่มีข้อมูลสินค้าหรือบริการในขณะนี้")
+else:
+    # วนลูปเพื่อแสดงข้อมูลแต่ละรายการ
+    for item in all_items:
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 2])
+
+            with col1:
+                st.image(item['image_url'], use_column_width=True)
+
+            with col2:
+                st.header(item['name'])
+                st.write(item['description'])
+
+                if item.get('benefits'):
+                    st.subheader("⭐ คุณสมบัติและประโยชน์")
+                    for benefit in item['benefits']:
+                        st.markdown(f"- {benefit}")
+
+                if item.get('suitable_for'):
+                    st.subheader("👥 เหมาะสำหรับ")
+                    st.write(" / ".join(item['suitable_for']))

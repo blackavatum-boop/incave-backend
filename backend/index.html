@@ -1,0 +1,74 @@
+// --- ส่วนของ JavaScript เริ่มต้นที่นี่ ---
+
+// 1. ดึง Element ที่เราต้องการใช้งานจากหน้า HTML
+const sendButton = document.getElementById('sendButton');
+const questionInput = document.getElementById('questionInput');
+const chatContainer = document.getElementById('chatContainer');
+
+// 2. สร้างฟังก์ชันสำหรับส่งคำถามไปยัง Backend
+async function askAI() {
+    const userQuestion = questionInput.value; // ดึงข้อความจากช่องพิมพ์
+
+    // ตรวจสอบว่าผู้ใช้พิมพ์อะไรมาหรือยัง
+    if (!userQuestion) {
+        alert('กรุณาพิมพ์คำถามก่อนครับ');
+        return;
+    }
+
+    // แสดงคำถามของผู้ใช้บนหน้าจอ
+    displayMessage(userQuestion, 'user');
+
+    try {
+        // 3. ใช้ fetch() เพื่อส่ง Request ไปยัง Backend ที่รันอยู่ที่ port 3000
+        const response = await fetch('http://localhost:3000/api/consult', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ question: userQuestion })
+        });
+
+        // ถ้าส่งไม่สำเร็จ (เช่น server ปิด) ให้แสดง error
+        if (!response.ok) {
+            throw new Error('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+        }
+
+        // 4. รับคำตอบจาก AI กลับมา
+        const data = await response.json();
+        const aiAnswer = data.answer;
+
+        // 5. แสดงคำตอบของ AI บนหน้าจอ (ส่วนนี้ที่ขาดไป)
+        displayMessage(aiAnswer, 'ai');
+
+    } catch (error) {
+        // จัดการ Error (ส่วนนี้ที่ขาดไป)
+        console.error('เกิดข้อผิดพลาด:', error);
+        displayMessage('ขออภัยค่ะ เกิดข้อผิดพลาดบางอย่าง โปรดลองอีกครั้ง', 'ai');
+    }
+
+    // เคลียร์ช่องพิมพ์ให้ว่าง (ส่วนนี้ที่ขาดไป)
+    questionInput.value = '';
+}
+
+// ฟังก์ชันสำหรับช่วยแสดงผลข้อความในกล่องแชท (ส่วนนี้ที่ขาดไป)
+function displayMessage(message, sender) {
+    const messageElement = document.createElement('div');
+    messageElement.textContent = message;
+
+    if (sender === 'user') {
+        messageElement.className = 'user-message';
+    } else {
+        messageElement.className = 'ai-message';
+    }
+
+    chatContainer.appendChild(messageElement);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// 6. กำหนดให้ปุ่ม "ส่ง" และการกด Enter ทำงาน (ส่วนนี้ที่ขาดไป)
+sendButton.addEventListener('click', askAI);
+questionInput.addEventListener('keyup', function(event) {
+    if (event.key === 'Enter') {
+        askAI();
+    }
+});
