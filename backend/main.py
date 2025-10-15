@@ -1,5 +1,5 @@
 # C:\MyIncaveProject\backend\main.py
-# 🌟 Final Version: ใช้ requests เรียก API โดยตรงเพื่อแก้ปัญหา v1beta
+# 🌟 Final Version v6.0: อัปเดตชื่อโมเดลเป็นเวอร์ชันล่าสุดตามข้อมูลที่ถูกต้อง
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -18,7 +18,7 @@ load_dotenv()
 app = FastAPI(
     title="Incave AI Backend",
     description="API สำหรับให้บริการปรึกษาด้วย AI",
-    version="5.0.0"
+    version="6.0.0" # อัปเดตเวอร์ชัน
 )
 app.add_middleware(
     CORSMiddleware,
@@ -45,8 +45,8 @@ class ConsultResponse(BaseModel):
 @app.post("/api/consult", response_model=ConsultResponse)
 async def handle_consultation(request: ConsultRequest):
     
-    # ใช้ URL ที่เป็นเวอร์ชัน v1 และโมเดล gemini-pro ที่เป็นมาตรฐาน
-    api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}"
+    # ⭐ แก้ไขตรงนี้: เปลี่ยนไปใช้ URL และโมเดลเวอร์ชันใหม่ล่าสุด
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
     
     prompt = f"""
         คุณคือ "Incave AI" ผู้เชี่ยวชาญด้านสุขภาพองค์รวมและการแพทย์แผนไทย
@@ -76,7 +76,7 @@ async def handle_consultation(request: ConsultRequest):
         if "candidates" in response_json and len(response_json["candidates"]) > 0:
             ai_answer = response_json["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            ai_answer = "ขออภัยค่ะ AI ไม่สามารถสร้างคำตอบได้ในขณะนี้"
+            ai_answer = "ขออภัยค่ะ AI ไม่สามารถสร้างคำตอบได้ในขณะนี้ โปรดลองอีกครั้ง"
 
         return ConsultResponse(answer=ai_answer)
         
@@ -91,4 +91,4 @@ async def handle_consultation(request: ConsultRequest):
 # --- 5. Endpoint พื้นฐาน ---
 @app.get("/")
 def read_root():
-    return {"message": "Incave AI Backend (v5.0) is running!"}
+    return {"message": "Incave AI Backend (v6.0.0) is running!"}
